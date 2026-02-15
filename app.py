@@ -33,54 +33,72 @@ uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
 
 # Load model function
 def load_model(name):
-
     model_path = f"models/{name}.pkl"
-
     return joblib.load(model_path)
-
 
 # When file uploaded
 if uploaded_file is not None:
 
     df = pd.read_csv(uploaded_file)
 
-    st.write("Dataset Preview:")
+    st.subheader("Dataset Preview")
     st.write(df.head())
 
     # Assume last column is target
-    X = df.iloc[:, :-1]
-    y = df.iloc[:, -1]
+    X = df.iloc[:, :-1].copy()
+    y = df.iloc[:, -1].copy()
 
+    # --------------------------
+    # FIX: Consistent encoding using factorize
+    # --------------------------
+    for col in X.columns:
+        if X[col].dtype == 'object':
+            X[col] = pd.factorize(X[col])[0]
+
+    if y.dtype == 'object':
+        y = pd.factorize(y)[0]
+
+    # --------------------------
     # Load selected model
+    # --------------------------
     model = load_model(model_name)
 
     # Predictions
     y_pred = model.predict(X)
 
-    # For AUC
+    # AUC Score
     if hasattr(model, "predict_proba"):
         y_prob = model.predict_proba(X)[:, 1]
         auc = roc_auc_score(y, y_prob)
     else:
-        auc = 0
+        auc = 0.0
 
-    # Metrics
+    # Metrics calculation
     accuracy = accuracy_score(y, y_pred)
     precision = precision_score(y, y_pred, average='weighted')
     recall = recall_score(y, y_pred, average='weighted')
     f1 = f1_score(y, y_pred, average='weighted')
     mcc = matthews_corrcoef(y, y_pred)
 
+    # --------------------------
+    # Display metrics
+    # --------------------------
     st.subheader("Evaluation Metrics")
 
-    st.write(f"Accuracy: {accuracy:.4f}")
-    st.write(f"AUC Score: {auc:.4f}")
-    st.write(f"Precision: {precision:.4f}")
-    st.write(f"Recall: {recall:.4f}")
-    st.write(f"F1 Score: {f1:.4f}")
-    st.write(f"MCC Score: {mcc:.4f}")
+    col1, col2, col3 = st.columns(3)
 
+    col1.metric("Accuracy", f"{accuracy:.4f}")
+    col1.metric("Precision", f"{precision:.4f}")
+
+    col2.metric("Recall", f"{recall:.4f}")
+    col2.metric("F1 Score", f"{f1:.4f}")
+
+    col3.metric("AUC Score", f"{auc:.4f}")
+    col3.metric("MCC Score", f"{mcc:.4f}")
+
+    # --------------------------
     # Confusion Matrix
+    # --------------------------
     st.subheader("Confusion Matrix")
 
     cm = confusion_matrix(y, y_pred)
@@ -89,9 +107,14 @@ if uploaded_file is not None:
 
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax)
 
+    ax.set_xlabel("Predicted")
+    ax.set_ylabel("Actual")
+
     st.pyplot(fig)
 
+    # --------------------------
     # Classification Report
+    # --------------------------
     st.subheader("Classification Report")
 
     report = classification_report(y, y_pred)
@@ -99,6 +122,4 @@ if uploaded_file is not None:
     st.text(report)
 
 else:
-
-    st.write("Please upload a dataset to continue")
-
+    st.info("Please upload a dataset to continue")
