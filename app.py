@@ -3,19 +3,30 @@ import pandas as pd
 import numpy as np
 import joblib
 
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
-from sklearn.metrics import roc_auc_score, matthews_corrcoef, confusion_matrix
-from sklearn.metrics import classification_report
+from sklearn.metrics import accuracy_score, precision_score, recall_score
+from sklearn.metrics import f1_score, roc_auc_score, matthews_corrcoef
+from sklearn.metrics import confusion_matrix, classification_report
 
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+# =========================
+# Load scaler and encoders
+# =========================
+
+scaler = joblib.load("models/scaler.pkl")
+label_encoders = joblib.load("models/label_encoders.pkl")
+
+# =========================
 # Page title
-st.title("ML Assignment 2 - Classification Models Dashboard")
+# =========================
 
-st.write("Upload dataset and select model to evaluate")
+st.title("ML Assignment 2 - Classification Dashboard")
 
-# Model selection dropdown
+# =========================
+# Model selection
+# =========================
+
 model_name = st.selectbox(
     "Select Model",
     (
@@ -28,93 +39,105 @@ model_name = st.selectbox(
     )
 )
 
+# =========================
+# Load model
+# =========================
+
+def load_model(name):
+    return joblib.load(f"models/{name}.pkl")
+
+# =========================
 # File uploader
+# =========================
+
 uploaded_file = st.file_uploader("Upload CSV file", type=["csv"])
 
-# Load model function
-def load_model(name):
-    model_path = f"models/{name}.pkl"
-    return joblib.load(model_path)
-
-# When file uploaded
 if uploaded_file is not None:
 
-    df = pd.read_csv(uploaded_file)
+    df = pd.read_csv(uploaded_file, header=None)
 
-    st.subheader("Dataset Preview")
+    df.columns = [
+        'age','workclass','fnlwgt','education','education-num',
+        'marital-status','occupation','relationship','race',
+        'sex','capital-gain','capital-loss','hours-per-week',
+        'native-country','income'
+    ]
+
+    st.write("Dataset Preview")
     st.write(df.head())
 
-    # Assume last column is target
-    X = df.iloc[:, :-1].copy()
-    y = df.iloc[:, -1].copy()
+    X = df.drop("income", axis=1)
+    y = df["income"]
 
-    # --------------------------
-    # FIX: Consistent encoding using factorize
-    # --------------------------
+    # =========================
+    # Apply LabelEncoders
+    # =========================
+
     for col in X.columns:
-        if X[col].dtype == 'object':
-            X[col] = pd.factorize(X[col])[0]
+        if col in label_encoders:
+            le = label_encoders[col]
+            X[col] = le.transform(X[col].astype(str))
 
-    if y.dtype == 'object':
-        y = pd.factorize(y)[0]
+    if "income" in label_encoders:
+        y = label_encoders["income"].transform(y.astype(str))
 
-    # --------------------------
-    # Load selected model
-    # --------------------------
+    # =========================
+    # Apply Scaling
+    # =========================
+
+    X_scaled = scaler.transform(X)
+
+    # =========================
+    # Load model and predict
+    # =========================
+
     model = load_model(model_name)
 
-    # Predictions
-    y_pred = model.predict(X)
+    y_pred = model.predict(X_scaled)
 
-    # AUC Score
     if hasattr(model, "predict_proba"):
-        y_prob = model.predict_proba(X)[:, 1]
+        y_prob = model.predict_proba(X_scaled)[:,1]
         auc = roc_auc_score(y, y_prob)
     else:
         auc = 0.0
 
-    # Metrics calculation
+    # =========================
+    # Metrics
+    # =========================
+
     accuracy = accuracy_score(y, y_pred)
-    precision = precision_score(y, y_pred, average='weighted')
-    recall = recall_score(y, y_pred, average='weighted')
-    f1 = f1_score(y, y_pred, average='weighted')
+    precision = precision_score(y, y_pred)
+    recall = recall_score(y, y_pred)
+    f1 = f1_score(y, y_pred)
     mcc = matthews_corrcoef(y, y_pred)
 
-    # --------------------------
-    # Display metrics
-    # --------------------------
     st.subheader("Evaluation Metrics")
 
-    col1, col2, col3 = st.columns(3)
+    st.write("Accuracy:", round(accuracy,4))
+    st.write("Precision:", round(precision,4))
+    st.write("Recall:", round(recall,4))
+    st.write("F1 Score:", round(f1,4))
+    st.write("AUC Score:", round(auc,4))
+    st.write("MCC Score:", round(mcc,4))
 
-    col1.metric("Accuracy", f"{accuracy:.4f}")
-    col1.metric("Precision", f"{precision:.4f}")
-
-    col2.metric("Recall", f"{recall:.4f}")
-    col2.metric("F1 Score", f"{f1:.4f}")
-
-    col3.metric("AUC Score", f"{auc:.4f}")
-    col3.metric("MCC Score", f"{mcc:.4f}")
-
-    # --------------------------
+    # =========================
     # Confusion Matrix
-    # --------------------------
+    # =========================
+
     st.subheader("Confusion Matrix")
 
     cm = confusion_matrix(y, y_pred)
 
     fig, ax = plt.subplots()
 
-    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', ax=ax)
-
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("Actual")
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues")
 
     st.pyplot(fig)
 
-    # --------------------------
+    # =========================
     # Classification Report
-    # --------------------------
+    # =========================
+
     st.subheader("Classification Report")
 
     report = classification_report(y, y_pred)
@@ -122,4 +145,4 @@ if uploaded_file is not None:
     st.text(report)
 
 else:
-    st.info("Please upload a dataset to continue")
+    st.write("Upload dataset to continue")
